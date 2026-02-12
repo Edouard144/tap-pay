@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const mqtt = require('mqtt');
 const http = require('http');
@@ -10,211 +11,205 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    methods: ['GET', 'POST'],
+  },
 });
 
-app.use(cors());
+app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || '*' }));
 app.use(express.json());
 
-const PORT = 8208;
-const TEAM_ID = "team_rdf";
-const MQTT_BROKER = "mqtt://157.173.101.159:1883";
-const MONGO_URI = process.env.MONGODB_URI;
+const PORT = process.env.PORT || 8208;
 
-// MongoDB Connection
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Card Schema
-const cardSchema = new mongoose.Schema({
-  uid: { type: String, required: true, unique: true },
-  holderName: { type: String, required: true },
-  balance: { type: Number, default: 0 },
-  lastTopup: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+// ────────────────────────────────────────────────
+// MQTT Client (public HiveMQ – NO credentials needed)
+// ────────────────────────────────────────────────
+const mqttClient = mqtt.connect(process.env.MQTT_BROKER, {
+  reconnectPeriod: 5000,
+  connectTimeout: 10000,
+  // username & password intentionally omitted – public broker rejects them
 });
-
-const Card = mongoose.model('Card', cardSchema);
-
-// Transaction Schema
-const transactionSchema = new mongoose.Schema({
-  uid: { type: String, required: true, index: true },
-  holderName: { type: String, required: true },
-  type: { type: String, enum: ['topup', 'debit'], default: 'topup' },
-  amount: { type: Number, required: true },
-  balanceBefore: { type: Number, required: true },
-  balanceAfter: { type: Number, required: true },
-  description: { type: String },
-  timestamp: { type: Date, default: Date.now }
-});
-
-const Transaction = mongoose.model('Transaction', transactionSchema);
-
-// Topics
-const TOPIC_STATUS = `rfid/${TEAM_ID}/card/status`;
-const TOPIC_BALANCE = `rfid/${TEAM_ID}/card/balance`;
-const TOPIC_TOPUP = `rfid/${TEAM_ID}/card/topup`;
-
-// MQTT Client Setup
-const mqttClient = mqtt.connect(MQTT_BROKER);
 
 mqttClient.on('connect', () => {
-  console.log('Connected to MQTT Broker');
-  mqttClient.subscribe(TOPIC_STATUS);
-  mqttClient.subscribe(TOPIC_BALANCE);
+  console.log('Connected to MQTT broker (HiveMQ public)');
+  const balanceTopic = `${process.env.MQTT_TOPIC_PREFIX}card/balance`;
+  mqttClient.subscribe(balanceTopic, (err) => {
+    if (err) {
+      console.error('Subscribe failed:', err.message);
+    } else {
+      console.log(`Subscribed to: ${balanceTopic}`);
+    }
+  });
 });
 
 mqttClient.on('message', (topic, message) => {
-  console.log(`Received message on ${topic}: ${message.toString()}`);
   try {
-    const payload = JSON.parse(message.toString());
+    const data = JSON.parse(message.toString());
+    console.log(`MQTT rx ${topic}:`, data);
 
-    if (topic === TOPIC_STATUS) {
-      io.emit('card-status', payload);
-    } else if (topic === TOPIC_BALANCE) {
-      io.emit('card-balance', payload);
+    if (topic.endsWith('card/balance')) {
+      io.emit('balance-update', data);
     }
+    // Add more topic handlers here if needed (status, etc.)
   } catch (err) {
-    console.error('Failed to parse MQTT message:', err);
+    console.error('Invalid MQTT message:', err.message);
   }
 });
 
-// HTTP Endpoints
+mqttClient.on('error', (err) => console.error('MQTT error:', err.message));
+mqttClient.on('close', () => console.log('MQTT disconnected – reconnecting...'));
+
+// ────────────────────────────────────────────────
+// MongoDB Setup
+// ────────────────────────────────────────────────
+const MONGO_URI = process.env.MONGODB_URI;
+
+if (!MONGO_URI) {
+  console.error('Missing MONGODB_URI in .env');
+  process.exit(1);
+}
+
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch((err) => {
+    console.error('MongoDB connection failed:', err.message);
+    process.exit(1);
+  });
+
+// Schemas
+const cardSchema = new mongoose.Schema(
+  {
+    uid: { type: String, required: true, unique: true, trim: true },
+    holderName: { type: String, required: true, trim: true },
+    balance: { type: Number, default: 0, min: 0 },
+    lastTopupAmount: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+const transactionSchema = new mongoose.Schema(
+  {
+    uid: { type: String, required: true, index: true },
+    holderName: { type: String, required: true },
+    type: { type: String, enum: ['topup', 'debit'], default: 'topup' },
+    amount: { type: Number, required: true },
+    balanceBefore: { type: Number, required: true },
+    balanceAfter: { type: Number, required: true },
+    description: String,
+  },
+  { timestamps: true }
+);
+
+const Card = mongoose.model('Card', cardSchema);
+const Transaction = mongoose.model('Transaction', transactionSchema);
+
+// ────────────────────────────────────────────────
+// Routes
+// ────────────────────────────────────────────────
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    mqttConnected: mqttClient.connected,
+  });
+});
+
 app.post('/topup', async (req, res) => {
   const { uid, amount, holderName } = req.body;
 
-  if (!uid || amount === undefined) {
-    return res.status(400).json({ error: 'UID and amount are required' });
+  if (!uid || typeof uid !== 'string' || uid.trim().length < 3) {
+    return res.status(400).json({ error: 'Valid UID required (min 3 chars)' });
+  }
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Amount must be positive integer' });
   }
 
   try {
-    // Find or create card
-    let card = await Card.findOne({ uid });
+    let card = await Card.findOne({ uid: uid.trim() });
     const balanceBefore = card ? card.balance : 0;
-    
-    if (!card) {
-      if (!holderName) {
-        return res.status(400).json({ error: 'Holder name is required for new cards' });
+    const isNew = !card;
+
+    if (isNew) {
+      if (!holderName?.trim()) {
+        return res.status(400).json({ error: 'Holder name required for new card' });
       }
-      card = new Card({ uid, holderName, balance: amount, lastTopup: amount });
+      card = new Card({
+        uid: uid.trim(),
+        holderName: holderName.trim(),
+        balance: amount,
+        lastTopupAmount: amount,
+      });
     } else {
-      // Cumulative topup: add to existing balance
       card.balance += amount;
-      card.lastTopup = amount;
-      card.updatedAt = Date.now();
+      card.lastTopupAmount = amount;
     }
 
     await card.save();
 
-    // Create transaction record
-    const transaction = new Transaction({
+    const tx = await Transaction.create({
       uid: card.uid,
       holderName: card.holderName,
       type: 'topup',
-      amount: amount,
-      balanceBefore: balanceBefore,
+      amount,
+      balanceBefore,
       balanceAfter: card.balance,
-      description: `Top-up of $${amount.toFixed(2)}`
+      description: `Top-up of ${amount}`,
     });
-    await transaction.save();
 
-    // Publish to MQTT with updated balance
-    const payload = JSON.stringify({ uid, amount: card.balance });
-    mqttClient.publish(TOPIC_TOPUP, payload, (err) => {
-      if (err) {
-        console.error('Failed to publish topup:', err);
-        return res.status(500).json({ error: 'Failed to publish topup command' });
+    // Optional: publish updated balance to MQTT
+    const balanceTopic = `${process.env.MQTT_TOPIC_PREFIX}card/balance`;
+    mqttClient.publish(
+      balanceTopic,
+      JSON.stringify({
+        uid: card.uid,
+        balance: card.balance,
+        timestamp: new Date().toISOString(),
+      }),
+      { qos: 1 },
+      (err) => {
+        if (err) console.error('MQTT publish failed:', err.message);
       }
-      console.log(`Published topup for ${uid} (${card.holderName}): ${card.balance}`);
-    });
+    );
 
-    res.json({ 
-      success: true, 
-      message: 'Topup successful',
+    res.json({
+      success: true,
       card: {
         uid: card.uid,
         holderName: card.holderName,
         balance: card.balance,
-        lastTopup: card.lastTopup
+        lastTopupAmount: card.lastTopupAmount,
+        updatedAt: card.updatedAt,
       },
       transaction: {
-        id: transaction._id,
-        amount: transaction.amount,
-        balanceAfter: transaction.balanceAfter,
-        timestamp: transaction.timestamp
-      }
+        id: tx._id,
+        amount: tx.amount,
+        balanceAfter: tx.balanceAfter,
+        timestamp: tx.createdAt,
+      },
     });
   } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: 'Database operation failed' });
+    console.error('Top-up error:', err.message);
+    res.status(500).json({ error: 'Operation failed' });
   }
 });
 
-// Get card details
-app.get('/card/:uid', async (req, res) => {
-  try {
-    const card = await Card.findOne({ uid: req.params.uid });
-    if (!card) {
-      return res.status(404).json({ error: 'Card not found' });
-    }
-    res.json(card);
-  } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: 'Database operation failed' });
-  }
+// Add your other routes here (get card, transactions, etc.) ...
+
+// ────────────────────────────────────────────────
+// Error handling middleware (last!)
+// ────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.stack);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-// Get all cards
-app.get('/cards', async (req, res) => {
-  try {
-    const cards = await Card.find().sort({ updatedAt: -1 });
-    res.json(cards);
-  } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: 'Database operation failed' });
-  }
-});
-
-// Get transaction history for a specific card
-app.get('/transactions/:uid', async (req, res) => {
-  try {
-    const transactions = await Transaction.find({ uid: req.params.uid })
-      .sort({ timestamp: -1 })
-      .limit(50); // Limit to last 50 transactions
-    res.json(transactions);
-  } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: 'Database operation failed' });
-  }
-});
-
-// Get all transactions (optional - for admin view)
-app.get('/transactions', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 100;
-    const transactions = await Transaction.find()
-      .sort({ timestamp: -1 })
-      .limit(limit);
-    res.json(transactions);
-  } catch (err) {
-    console.error('Database error:', err);
-    res.status(500).json({ error: 'Database operation failed' });
-  }
-});
-
-// Socket connectivity
-io.on('connection', (socket) => {
-  console.log('A user connected to the dashboard');
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
-
+// ────────────────────────────────────────────────
+// Start
+// ────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Backend server running on http://0.0.0.0:${PORT}`);
-  console.log(`Access from: http://157.173.101.159:${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
+  console.log(`MQTT prefix: ${process.env.MQTT_TOPIC_PREFIX}`);
 });

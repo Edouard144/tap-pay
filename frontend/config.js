@@ -1,3 +1,7 @@
+const BACKEND_URL = 'http://localhost:3000';
+const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_TOPIC_PREFIX = 'rfid/edouard/';
+
 // Configuration for different environments
 const config = {
   // Automatically detect if running locally or on production
@@ -14,5 +18,6 @@ const config = {
   }
 };
 
+
 // Export the backend URL
-const BACKEND_URL = config.getBackendUrl();
+
