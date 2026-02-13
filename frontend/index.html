@@ -1,32 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RFID Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SILENT Shield - Dashboard</title>
+
+  <!-- Google Font: Cairo -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="config.js"></script>
 </head>
+
 <body>
   <div class="dashboard">
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-title-row">
-          <div>
-            <h1>SILENT <span>Shield</span></h1>
-            <p class="sidebar-subtitle">Dashboard</p>
-          </div>
-          <div class="connection-indicator">
-            <span class="indicator-dot" id="connection-indicator"></span>
-          </div>
-        </div>
+        <h1>SILENT <span>Shield</span></h1>
+        <p class="sidebar-subtitle">Secure Card Management</p>
       </div>
 
       <nav class="sidebar-nav">
         <a href="#" class="nav-item active">
+          <span class="nav-icon">🏠</span>
+          <span class="nav-text">Dashboard</span>
+        </a>
+        <a href="#" class="nav-item">
           <span class="nav-icon">💳</span>
           <span class="nav-text">Cards</span>
         </a>
@@ -43,126 +45,138 @@
       <div class="system-status">
         <h3>System Status</h3>
         <div class="status-item">
-          <div class="status-label">
-            <span class="status-dot" id="mqtt-status"></span>
-            MQTT Broker
-          </div>
-          <div class="status-value" id="mqtt-status-text">Connecting...</div>
+          <span class="status-label">
+            <span id="mqtt-status" class="status-dot"></span> MQTT Broker
+          </span>
+          <span id="mqtt-status-text">Connecting...</span>
         </div>
         <div class="status-item">
-          <div class="status-label">
-            <span class="status-dot" id="backend-status"></span>
-            Backend Server
-          </div>
-          <div class="status-value" id="backend-status-text">Connecting...</div>
+          <span class="status-label">
+            <span id="backend-status" class="status-dot"></span> Backend Server
+          </span>
+          <span id="backend-status-text">Connecting...</span>
         </div>
         <div class="status-item">
-          <div class="status-label">
-            <span class="status-dot" id="db-status"></span>
-            Database
-          </div>
-          <div class="status-value" id="db-status-text">Unknown</div>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="team-info">
-          <span class="team-label">Team ID</span>
-          <span class="team-value">team_rdf</span>
-        </div>
-        <div class="uptime">
-          <span class="uptime-label">Uptime</span>
-          <span class="uptime-value" id="uptime">00:00:00</span>
+          <span class="status-label">
+            <span id="db-status" class="status-dot"></span> Database
+          </span>
+          <span id="db-status-text">Unknown</span>
         </div>
       </div>
     </aside>
 
     <!-- Main Content -->
     <main class="main-content">
-      <!-- Quick Stats Cards -->
+      <header class="top-bar">
+        <h2>Dashboard</h2>
+        <div class="top-icons">
+          <span id="connection-indicator">●</span>
+          <span>💳 Cards</span>
+          <span>📊 Analytics</span>
+          <span>⚙️ Settings</span>
+        </div>
+      </header>
+
+      <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card-main">
           <div class="stat-icon">💳</div>
           <div class="stat-content">
             <div class="stat-label">Total Cards</div>
-            <div class="stat-value" id="total-cards">0</div>
+            <div id="total-cards" class="stat-value">0</div>
           </div>
         </div>
         <div class="stat-card-main">
           <div class="stat-icon">📈</div>
           <div class="stat-content">
             <div class="stat-label">Today's Transactions</div>
-            <div class="stat-value" id="today-transactions">0</div>
+            <div id="today-transactions" class="stat-value">0</div>
           </div>
         </div>
         <div class="stat-card-main">
           <div class="stat-icon">💰</div>
           <div class="stat-content">
             <div class="stat-label">Total Volume</div>
-            <div class="stat-value" id="total-volume">$0.00</div>
+            <div id="total-volume" class="stat-value">$0.00</div>
           </div>
         </div>
         <div class="stat-card-main">
           <div class="stat-icon">⚡</div>
           <div class="stat-content">
             <div class="stat-label">Avg. Transaction</div>
-            <div class="stat-value" id="avg-transaction">$0.00</div>
+            <div id="avg-transaction" class="stat-value">$0.00</div>
           </div>
         </div>
       </div>
 
+      <!-- Card + Top Up + History -->
       <div class="content-grid">
-        <!-- Card Status Section -->
-        <div class="glass-card card-status-section">
+        <!-- Active Card -->
+        <div class="glass-card">
           <h3>Active Card</h3>
-          <div class="card-visual-container">
-            <div id="card-visual" class="card-visual">
-              <div class="card-chip"></div>
-              <div class="card-number">**** **** **** ****</div>
-              <div class="card-details">
-                <div class="card-holder-group">
-                  <span class="card-label">CARD HOLDER</span>
-                  <span id="card-uid-display" class="card-value">NO CARD</span>
-                </div>
-                <div class="card-balance-group">
-                  <span class="card-label">BALANCE</span>
-                  <span id="card-balance-display" class="card-value">$0.00</span>
-                </div>
+          <div id="card-visual" class="card-visual active">
+            <div class="card-chip"></div>
+            <div class="card-number">**** **** **** ****</div>
+            <div class="card-details">
+              <div>
+                <span class="card-label">CARD HOLDER</span>
+                <span id="card-uid-display" class="card-value">NO CARD</span>
+              </div>
+              <div>
+                <span class="card-label">BALANCE</span>
+                <span id="card-balance-display" class="card-value">$0.00</span>
               </div>
             </div>
           </div>
-          <div id="status-display" class="status-content">
-            <div class="status-placeholder">Scan an RFID card to begin...</div>
-          </div>
+          <p id="status-display" class="scan-hint">Scan an RFID card to begin...</p>
         </div>
 
-        <!-- Top Up Section – improved styling applied via CSS -->
+        <!-- Top Up -->
         <div class="glass-card topup-section">
           <h3>Top Up Card</h3>
           <div class="input-group">
-            <label for="uid">Card UID</label>
-            <input type="text" id="uid" placeholder="UID auto-populated" readonly>
+            <label>Card UID</label>
+            <input id="uid" type="text" placeholder="Enter Card UID" />
           </div>
           <div class="input-group">
-            <label for="holderName">Card Holder Name</label>
-            <input type="text" id="holderName" placeholder="Enter name for new cards">
+            <label>Card Holder Name</label>
+            <input id="holderName" type="text" placeholder="Enter holder name" />
           </div>
           <div class="input-group">
-            <label for="amount">Amount ($)</label>
-            <input type="number" id="amount" placeholder="0.00" step="0.01">
+            <label>Amount ($)</label>
+            <input id="amount" type="number" placeholder="Enter amount" min="1" step="0.01" />
           </div>
-          <button id="topup-btn" disabled>Confirm Top Up</button>
+          <button id="topup-btn">Confirm Top Up</button>
         </div>
 
-        <!-- Transaction History Section -->
-        <div class="glass-card transaction-section">
+        <!-- Transactions -->
+        <div class="glass-card" style="grid-column: 1 / -1;">
           <h3>Transaction History</h3>
-          <div id="transaction-history" class="transaction-list"></div>
+          <div id="transaction-history" class="transaction-list">
+            <!-- You can add dynamic items here later -->
+            <div class="transaction-item topup">
+              <span>Top Up • Card ****1234</span>
+              <span style="color: var(--light-orange); font-weight: 600;">+$50.00</span>
+              <span>2 min ago</span>
+            </div>
+            <div class="transaction-item debit">
+              <span>Purchase • Coffee Shop</span>
+              <span style="color: var(--danger); font-weight: 600;">-$8.75</span>
+              <span>1 hr ago</span>
+            </div>
+          </div>
         </div>
       </div>
     </main>
   </div>
 
+  <!-- Socket.io Library -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <!-- Configuration -->
+  <script src="config.js"></script>
+  <!-- Main Application Logic -->
   <script src="app.js"></script>
 </body>
+
+
 </html>

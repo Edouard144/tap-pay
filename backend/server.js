@@ -19,6 +19,20 @@ const io = new Server(server, {
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || '*' }));
 app.use(express.json());
 
+// Root route for API verification
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'Tap-to-Pay API is running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      cards: '/cards',
+      transactions: '/transactions'
+    }
+  });
+});
+
 const PORT = process.env.PORT || 8208;
 
 // ────────────────────────────────────────────────
@@ -32,12 +46,14 @@ const mqttClient = mqtt.connect(process.env.MQTT_BROKER, {
 
 mqttClient.on('connect', () => {
   console.log('Connected to MQTT broker (HiveMQ public)');
+  const statusTopic = `${process.env.MQTT_TOPIC_PREFIX}card/status`;
   const balanceTopic = `${process.env.MQTT_TOPIC_PREFIX}card/balance`;
-  mqttClient.subscribe(balanceTopic, (err) => {
+
+  mqttClient.subscribe([statusTopic, balanceTopic], (err) => {
     if (err) {
       console.error('Subscribe failed:', err.message);
     } else {
-      console.log(`Subscribed to: ${balanceTopic}`);
+      console.log(`Subscribed to: ${statusTopic}, ${balanceTopic}`);
     }
   });
 });
@@ -47,8 +63,10 @@ mqttClient.on('message', (topic, message) => {
     const data = JSON.parse(message.toString());
     console.log(`MQTT rx ${topic}:`, data);
 
-    if (topic.endsWith('card/balance')) {
-      io.emit('balance-update', data);
+    if (topic.endsWith('card/status')) {
+      io.emit('card-status', data);
+    } else if (topic.endsWith('card/balance')) {
+      io.emit('card-balance', data);
     }
     // Add more topic handlers here if needed (status, etc.)
   } catch (err) {
@@ -74,8 +92,9 @@ mongoose
   .then(() => console.log('MongoDB connected'))
   .catch((err) => {
     console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
+    console.log('Server continuing without DB (persistence disabled)');
   });
+
 
 // Schemas
 const cardSchema = new mongoose.Schema(
@@ -196,7 +215,47 @@ app.post('/topup', async (req, res) => {
   }
 });
 
-// Add your other routes here (get card, transactions, etc.) ...
+// Get all cards
+app.get('/cards', async (req, res) => {
+  try {
+    const cards = await Card.find().sort({ updatedAt: -1 });
+    res.json(cards);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch cards' });
+  }
+});
+
+// Get specific card details
+app.get('/card/:uid', async (req, res) => {
+  try {
+    const card = await Card.findOne({ uid: req.params.uid });
+    if (!card) return res.status(404).json({ error: 'Card not found' });
+    res.json(card);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch card' });
+  }
+});
+
+// Get all transactions
+app.get('/transactions', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  try {
+    const transactions = await Transaction.find().sort({ createdAt: -1 }).limit(limit);
+    res.json(transactions);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Get transaction history for specific card
+app.get('/transactions/:uid', async (req, res) => {
+  try {
+    const transactions = await Transaction.find({ uid: req.params.uid }).sort({ createdAt: -1 });
+    res.json(transactions);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
 
 // ────────────────────────────────────────────────
 // Error handling middleware (last!)

@@ -7,14 +7,14 @@
 
 // ----------------- WiFi Configuration -----------------
 
-const char* ssid = "your-wifi";
-const char* password = "your-password";
+const char* ssid = "Keza";
+const char* password = "ineza2008";
 const uint32_t WIFI_TIMEOUT_MS = 30000;
 
 // ----------------- MQTT Configuration -----------------
-const char* mqtt_server = "broker.benax.rw";
+const char* mqtt_server = "broker.hivemq.com";  // Changed from "broker.benax.rw"
 const uint16_t MQTT_PORT = 1883;
-const char* team_id = "team_rdf";
+const char* team_id = "edouard";  // Changed from "team_rdf"
 
 // ----------------- MQTT Topics -----------------
 String topic_status   = "rfid/" + String(team_id) + "/card/status";
@@ -24,8 +24,8 @@ String topic_health   = "rfid/" + String(team_id) + "/device/health";
 String topic_lwt      = "rfid/" + String(team_id) + "/device/status";
 
 // ----------------- Pin Mapping -----------------
-#define RST_PIN D3
-#define SS_PIN  D4
+#define RST_PIN 0
+#define SS_PIN 2
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 WiFiClient espClient;
@@ -222,3 +222,4 @@ void loop() {
     delay(2000); // Debounce
   }
 }
+
