@@ -44,7 +44,34 @@ The web dashboard is hosted and accessible at:
 2. Update WiFi credentials and MQTT topic.
 3. Upload to ESP8266.
 
-## 📄 Repository Structure
+## � Running Locally
+
+If you clone this repository, follow these steps to run it on your machine:
+
+### 1. Prerequisites
+- **Node.js** (v16 or higher)
+- **MongoDB** (Local instance or MongoDB Atlas account)
+
+### 2. Backend Setup
+1. `cd backend`
+2. `npm install`
+3. Create a `.env` file based on `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+4. Update `MONGODB_URI` in `.env` with your own database connection string.
+
+### 3. Frontend Setup
+1. `cd frontend`
+2. `npm install`
+3. Ensure `config.js` is set to point to your local backend (usually `http://localhost:8271`).
+
+### 4. Start the Application
+- **Start Backend**: `cd backend && npm run dev`
+- **Start Frontend**: `cd frontend && npm run dev`
+- **Open Dashboard**: Visit `http://localhost:9270` in your browser.
+
+## �📄 Repository Structure
 ```text
 tap-to-pay/
 ├── backend/      # Node.js API & Business Logic
